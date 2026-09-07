@@ -20,18 +20,20 @@ test('there are workflows to check', () => {
 });
 
 test('a warning that points somewhere points somewhere real', () => {
-  // The winget job tells whoever reads its warning to go and read a named
-  // section of a named file. A pointer to a heading that does not exist is
-  // worse than no pointer: it reads as an answer and ends the search.
-  const desktop = workflows.find((w) => w.name === 'desktop.yml');
-  assert.ok(desktop, 'desktop.yml should be there');
-
-  for (const [, quoted, file] of desktop.text.matchAll(
-    /see '([^']+)' in ([\w./-]+\.md)/g
-  )) {
-    const doc = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-    assert.match(doc, new RegExp(`^#+ ${quoted}\\s*$`, 'm'),
-      `${file} has no "${quoted}" heading, and a workflow warning sends people to it`);
+  // A job whose warning tells whoever reads it to go and read a named section
+  // of a named file. A pointer to a heading that does not exist is worse than
+  // no pointer: it reads as an answer and ends the search.
+  //
+  // Every workflow rather than one named file. It used to look up desktop.yml
+  // specifically, which meant deleting that workflow took the check with it —
+  // the guard was tied to the job that happened to need it first, not to the
+  // shape of the mistake.
+  for (const { name, text } of workflows) {
+    for (const [, quoted, file] of text.matchAll(/see '([^']+)' in ([\w./-]+\.md)/g)) {
+      const doc = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+      assert.match(doc, new RegExp(`^#+ ${quoted}\\s*$`, 'm'),
+        `${file} has no "${quoted}" heading, and a warning in ${name} sends people to it`);
+    }
   }
 });
 

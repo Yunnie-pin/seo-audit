@@ -3,11 +3,12 @@
 // Thirty-two flags and a window that reached ten of them, with nothing saying
 // which of the other twenty-two were decisions. These tests make the answer
 // compulsory: a flag added without an entry fails the build, and so does an
-// entry claiming the window sends something it does not.
+// entry claiming the window sends something the worker never reads.
 //
-// Reading Swift source from a Node test is unusual and deliberate. The
-// alternative is a CI job that only runs on macOS, and this needs to fail on
-// the machine of whoever adds the flag, at the moment they add it.
+// "The window" used to be a native shell. It is now the page `--serve` serves,
+// which is what those shells were always drawing anyway — so the contract in
+// src/options.mjs survived them unchanged, and only the file these tests read
+// it against had to move: `worker/index.mjs` instead of `CrawlSettings.swift`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -24,9 +25,27 @@ const read = (path) => readFileSync(join(root, path), 'utf8');
 const parsedFlags = () =>
   new Set([...read('bin/seo-audit.mjs').matchAll(/arg === '(--[a-z-]+)'/g)].map((m) => m[1]));
 
-/** Every query parameter the macOS app puts on a run. */
-const appParameters = () =>
-  new Set([...read('mac/SeoAudit/CrawlSettings.swift').matchAll(/name: "([a-zA-Z-]+)"/g)].map((m) => m[1]));
+/** Every query parameter name the worker reads, whatever the receiver is called.
+ *
+ *  `.get(` rather than `searchParams.get(`, and that is the whole point of the
+ *  looser pattern: half the run parameters are read inside helpers —
+ *  `psiOptions()`, `hostOptions()`, `searchConsoleProperty()`, `agentFor()` —
+ *  which take the searchParams under another name. Matching the qualified form
+ *  missed eight of the sixteen and called them broken. */
+const workerParameters = () =>
+  new Set([...read('worker/index.mjs').matchAll(/\.get\('([a-zA-Z-]+)'\)/g)].map((m) => m[1]));
+
+/** Names the same `.get(` pattern picks up that are not run parameters, each
+ *  one belonging to something else: two request headers, the unlock form's
+ *  field, and the parameters of endpoints other than /stream. Listed rather
+ *  than pattern-matched, so a new one has to be looked at. */
+const NOT_RUN_PARAMETERS = new Set([
+  'cookie', 'authorization',           // headers, read off the request
+  'token',                             // the unlock form's field
+  'url',                               // /stream's target, not a crawl setting
+  'since', 'sort', 'dir',              // /reports, listing the kept runs
+  'as', 'format',                      // /render and the export endpoints
+]);
 
 test('every flag the command line parses has an answer about the window', () => {
   const declared = new Set(OPTIONS.map((o) => o.flag));
@@ -44,127 +63,43 @@ test('the table does not describe flags that no longer exist', () => {
   assert.deepEqual(stale, [], `${stale.join(', ')} is in src/options.mjs and the CLI does not parse it`);
 });
 
-test('a flag the table says the window sends, the window sends', () => {
-  const sent = appParameters();
+test('a flag the table says the window sends, the worker reads', () => {
+  const seen = workerParameters();
   const claimed = runParameters();
   assert.ok(claimed.length > 0, 'the table should describe some run parameters');
 
-  const broken = claimed.filter((o) => !sent.has(o.query));
+  const broken = claimed.filter((o) => !seen.has(o.query));
   assert.deepEqual(broken.map((o) => o.flag), [],
-    `src/options.mjs says the window sends ${broken.map((o) => o.query).join(', ')} and ` +
-    'CrawlSettings.swift does not. Wire it up, or change the entry to say why it does not.');
+    `src/options.mjs says the page sends ${broken.map((o) => o.query).join(', ')} and ` +
+    'worker/index.mjs never reads it. Wire it up, or change the entry to say why it does not.');
 });
 
-test('a parameter the window sends is one the table knows about', () => {
-  // The other direction: the window inventing a parameter the engine has no
-  // flag for would be a setting that quietly does nothing.
-  const known = new Set([
-    ...OPTIONS.map((o) => o.query).filter(Boolean),
-    'url',      // the site itself, not a flag
-    'format',   // how the answer comes back, not a flag
-  ]);
-  const orphans = [...appParameters()].filter((name) => !known.has(name));
+test('a parameter the worker reads is one the table knows about', () => {
+  // The other direction, and the one that catches the worst of the four
+  // failures: a control the page draws for a parameter no flag corresponds to
+  // is a setting that quietly does nothing.
+  //
+  // Not circular. `formFields()` is generated *from* this table, so comparing
+  // the two would prove nothing; `worker/index.mjs` is written separately by
+  // hand, which is what makes it worth reading.
+  const known = new Set(OPTIONS.map((o) => o.query).filter(Boolean));
+  const orphans = [...workerParameters()]
+    .filter((name) => !known.has(name) && !NOT_RUN_PARAMETERS.has(name));
   assert.deepEqual(orphans, [],
-    `the window sends ${orphans.join(', ')}, which no flag in src/options.mjs corresponds to`);
+    `the worker reads ${orphans.join(', ')}, which no flag in src/options.mjs corresponds to. ` +
+    'Add the flag, or add the name to NOT_RUN_PARAMETERS with a note saying what it belongs to.');
 });
 
-// The macOS app has a Swift test suite of its own, and `npm test` cannot run
-// it: `swift test` needs a toolchain that most machines touching this repo do
-// not have, which is the same reason the checks above read Swift source rather
-// than running it. That suite pins the parameters a default run sends, in a
-// list of its own — and adding `llms-out` and `schema-out` left it stale, so a
-// release job failed on it minutes after everything here was green.
-//
-// So the two lists are compared here instead, on whatever machine changed one.
-test('the app\'s own test knows which parameters every run sends', () => {
-  // The literals inside `var items = [...]` in queryItems() — the ones sent
-  // unconditionally, rather than the ones a setting adds.
-  const swift = read('mac/SeoAudit/CrawlSettings.swift');
-  const block = swift.slice(swift.indexOf('var items = ['), swift.indexOf(']', swift.indexOf('var items = [')));
-  const always = new Set([...block.matchAll(/name: "([a-zA-Z-]+)"/g)].map((m) => m[1]));
-  assert.ok(always.size >= 3, 'expected to find the unconditional parameters');
 
-  // A setting that defaults to *on* is sent by a default run too, even though
-  // it is added conditionally rather than in the literal above. `hosts` is the
-  // first of those: the window audits the rest of the domain unless told not
-  // to, because it is a window somebody is watching. Read out of the Swift
-  // rather than listed here, so flipping a default in one file cannot leave
-  // this test describing the other one.
-  for (const [, name] of swift.matchAll(/@AppStorage\("seo-audit\.crawl\.(\w+)"\) var \w+ = true\b/g)) {
-    const sent = swift.match(new RegExp(`if ${name} \\{ items\\.append\\(\\.init\\(name: "([a-zA-Z-]+)"`));
-    if (sent) always.add(sent[1]);
-  }
-
-  // What ModelTests.swift asserts a default run sends.
-  const tests = read('mac/Tests/SeoAuditTests/ModelTests.swift');
-  const expectation = tests.match(/#expect\(names == \[([^\]]+)\]\)/);
-  assert.ok(expectation, 'ModelTests.swift no longer pins the default parameters');
-  const pinned = new Set([...expectation[1].matchAll(/"([a-zA-Z-]+)"/g)].map((m) => m[1]));
-
-  const missing = [...always].filter((name) => !pinned.has(name));
-  const stale = [...pinned].filter((name) => !always.has(name));
-  assert.deepEqual(missing, [],
-    `CrawlSettings.swift always sends ${missing.join(', ')} and ModelTests.swift does not expect it. ` +
-    'Add it there, or `swift test` fails in CI long after this passed.');
-  assert.deepEqual(stale, [],
-    `ModelTests.swift expects ${stale.join(', ')} and CrawlSettings.swift no longer sends it`);
-});
-
-// The version lives in four files and a bump touches one of them.
-//
-// This is not tidiness. The desktop shell refuses to start when its own version
-// disagrees with the engine's — that guard exists because Tauri's Windows
-// installer can replace one and not the other, and a stale engine runs old
-// checks while looking new. The guard compares `CARGO_PKG_VERSION` with what
-// `bin/seo-audit.mjs --version` prints, which is the root `package.json`. Bump
-// one without the other and every bundled build refuses to open, on somebody
-// else's machine, after the tag is already pushed.
-test('every file that carries the version agrees about it', () => {
+// The version used to live in four files, because the bundled shells carried
+// their own and refused to start when theirs and the engine's disagreed. There
+// is one now, and the release workflow derives the image tags from the git tag
+// rather than from any file — so all that is left to check is that the one
+// remaining copy is a shape `docker/metadata-action` can read as semver.
+test('the version is a plain semver', () => {
   const version = JSON.parse(read('package.json')).version;
-  assert.match(version, /^\d+\.\d+\.\d+$/, 'the engine should have a plain semver');
-
-  const elsewhere = {
-    'desktop/package.json': JSON.parse(read('desktop/package.json')).version,
-    'desktop/src-tauri/tauri.conf.json': JSON.parse(read('desktop/src-tauri/tauri.conf.json')).version,
-    'desktop/src-tauri/Cargo.toml':
-      read('desktop/src-tauri/Cargo.toml').match(/^version\s*=\s*"([^"]+)"/m)?.[1],
-  };
-
-  const disagreeing = Object.entries(elsewhere)
-    .filter(([, theirs]) => theirs !== version)
-    .map(([file, theirs]) => `${file} says ${theirs ?? '(nothing)'}`);
-
-  assert.deepEqual(disagreeing, [],
-    `package.json says ${version} and ${disagreeing.join(', ')}. The desktop shell refuses to ` +
-    'start when its version and the engine\'s disagree, so this is not cosmetic.');
-});
-
-test('the winget identifier the workflow publishes is the one the shell looks for', () => {
-  // Windows' update path runs `winget list --id <identifier>` to find out whether
-  // this copy came from winget, and `winget upgrade --id <identifier>` to move
-  // it. Both are silent when the identifier is one winget has never heard of —
-  // no error, no output, just an app that never offers an update. So the name in
-  // the Rust and the name the release workflow submits under have to be the same
-  // string, and nothing at runtime would ever tell us they had drifted.
-  const workflow = read('.github/workflows/desktop.yml');
-  const published = workflow.match(/^\s*identifier:\s*(\S+)\s*$/m)?.[1];
-  assert.ok(published, 'the desktop workflow should submit a winget manifest under some identifier');
-
-  // One constant in the Rust, because the query, the upgrade command and this
-  // check all have to mean the same package.
-  const rust = read('desktop/src-tauri/src/updates.rs');
-  const declared = rust.match(/pub const WINGET_ID: &str = "([^"]+)";/)?.[1];
-  assert.ok(declared, 'updates.rs should declare WINGET_ID');
-
-  assert.equal(declared, published,
-    `updates.rs asks winget about ${declared}, but the workflow publishes ${published}. ` +
-    'winget answers a name it does not know with silence, so this drift would ship as ' +
-    'a Windows build that simply never finds an update.');
-
-  // And nothing may go back to spelling it out by hand.
-  const literals = [...rust.matchAll(/"--id",\s*"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(literals, [],
-    'the identifier belongs in WINGET_ID, not written out again beside it');
+  assert.match(version, /^\d+\.\d+\.\d+$/,
+    'the release workflow tags images with type=semver, which needs a plain x.y.z');
 });
 
 test('a CHANGELOG version says Added or Fixed once, not twice', () => {
@@ -214,7 +149,7 @@ test('no source file is a binary file to git', () => {
   // The value is fine. Write it as an escape.
   const tracked = execSync('git ls-files', { cwd: root, encoding: 'utf8' })
     .split('\n')
-    .filter((f) => /\.(mjs|js|swift|json|md|yml|html|css|sh)$/.test(f));
+    .filter((f) => /\.(mjs|js|json|md|yml|html|css|sh)$/.test(f));
 
   const offenders = [];
   for (const file of tracked) {
@@ -232,40 +167,3 @@ test('no source file is a binary file to git', () => {
     '(\\u0000) so the file stays text.');
 });
 
-test('the app is built from the four named radii, not from eight numbers', () => {
-  // There were eight, in nine files: 6, 10, 12, 15, 16, 20, 26 and 28. The
-  // pairs are the tell — nobody decides a text field is 15 and the tally card
-  // beside it is 16. Each was chosen alone, months apart, and "almost
-  // consistent" reads worse than plainly inconsistent, because the eye notices
-  // the two points without being able to name them.
-  const files = execSync('git ls-files "mac/SeoAudit/*.swift"', { cwd: root, encoding: 'utf8' })
-    .split('\n')
-    .filter(Boolean)
-    .filter((f) => !f.endsWith('Design.swift'));   // where the scale is defined
-
-  const offenders = [];
-  for (const file of files) {
-    const source = readFileSync(join(root, file), 'utf8');
-    for (const match of source.matchAll(/cornerRadius:\s*(\d+)/g)) {
-      offenders.push(`${file}: cornerRadius: ${match[1]}`);
-    }
-  }
-  assert.deepEqual(offenders, [],
-    `${offenders.join(', ')} — use Radius.pill, .control, .card or .surface. ` +
-    'A fifth radius should need an argument.');
-});
-
-test('every settings text field looks like one', () => {
-  // A TextField in a grouped Form draws as right-aligned grey text with no box,
-  // which is exactly how that Form draws a read-only value. "Sitemap · Found
-  // automatically" then reads as a fact about the site rather than as an empty
-  // field somebody can type in. `.roundedBorder` is what tells them apart.
-  const source = readFileSync(join(root, 'mac/SeoAudit/SettingsScene.swift'), 'utf8');
-  const fields = [...source.matchAll(/TextField\((?:[^()]|\([^()]*\))*\)([\s\S]{0,220})/g)];
-  assert.ok(fields.length > 0, 'expected some text fields to check');
-
-  const bare = fields.filter(([, after]) => !after.includes('.textFieldStyle('));
-  assert.equal(bare.length, 0,
-    `${bare.length} settings text field(s) have no .textFieldStyle — in a grouped Form they ` +
-    'render as static grey text and stop looking editable.');
-});

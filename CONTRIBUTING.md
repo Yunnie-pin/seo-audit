@@ -2,8 +2,9 @@
 
 ```bash
 git clone https://github.com/nurkamol/seo-audit && cd seo-audit
-npm test                                   # 193 tests, no install needed
+npm test                                   # no install needed
 node bin/seo-audit.mjs https://example.com
+node bin/seo-audit.mjs --serve             # the web UI, on http://localhost:4321
 ```
 
 There is nothing to install and no build step. The test suite serves its own
@@ -20,9 +21,24 @@ Return `{ level, id, title, detail, url }` from one of three places:
 | `crossPageChecks` in `src/checks.mjs` | Needs every page at once |
 | `src/site.mjs` | Once per domain, or needs the link graph |
 
-Then, in the same change: add a row to the README's check table, a line to
-`CHANGELOG.md`, and a test in `test/unit.test.mjs` — with a case that proves
-it does **not** fire when it shouldn't, which is the half that matters.
+Then, in the same change. The first two are enforced by `npm test`, which reads
+the source to do it — so the failure lands on the machine of whoever added the
+check, not on somebody else's hours later:
+
+1. **A category in `src/areas.mjs`.** Without one it lands in "Other" and the
+   grouped report quietly stops being useful.
+2. **An entry in `src/score.mjs`** — `CHECKLIST`, with a `worst` matching the
+   level it is actually emitted at, a `scope`, and a sentence for what passing
+   looks like; or `NOT_SCORED`, with a reason rather than a shrug. A check that
+   only ever fires as `info` belongs in neither.
+3. **A test in `test/unit.test.mjs`** — with a case that proves it does **not**
+   fire when it shouldn't, which is the half that matters.
+4. **A row in the README's check table, and a line in `CHANGELOG.md`.**
+
+`scripts/check-levels.mjs` is what makes (1) and (2) enforceable. Promoting a
+check from `warn` to `error` and leaving its weight alone fails the suite, and
+so does an entry for a check nothing emits any more — that would sit in
+"passing" for ever, which is a claim the tool cannot back up.
 
 ## The three rules
 

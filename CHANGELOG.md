@@ -3,6 +3,53 @@
 Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- **Every front end except the web UI.** The macOS app (`mac/`), the Tauri shell
+  for Windows and Linux (`desktop/`) and the Raycast extension (`raycast/`) are
+  gone, along with the Homebrew cask and `Package.swift`. All three were
+  webviews around `--serve`, so nothing the page could do went with them.
+- **Publishing to npm, and GitHub Releases.** `@nurkamol/seo-audit` stops at
+  1.40.0. `npx github:nurkamol/seo-audit` is the install, and it always worked
+  that way — it clones the repository rather than fetching a package.
+- The `mac-app`, `mac-release`, `desktop` and `npm-publish` workflows, and the
+  `test:all` script that existed to run the Swift and Rust suites honestly.
+
+### Added
+- **A container, and a `Release` workflow that builds it.** `docker compose up
+  --build` serves the same page on `http://localhost:4321`, with kept runs in a
+  volume. A version tag builds `linux/amd64` and `linux/arm64` and pushes to
+  `ghcr.io/nurkamol/seo-audit`, after calling the test suite as a reusable
+  workflow — a tag is not by itself evidence that the code is healthy.
+- **`--host <address>`**, the address `--serve` binds to. It defaults to
+  `127.0.0.1` as before; a container needs `0.0.0.0`, because from outside the
+  container the loopback address answers nothing. What keeps that safe is
+  publishing the port to the host's loopback, not the flag — `--serve` has no
+  password by design, so anyone who can reach it can crawl anything.
+- **CI runs the suite on Windows as well as Linux.** Running only Linux hid
+  five real Windows failures for months.
+
+### Fixed
+- **`scripts/check-levels.mjs` scanned nothing on Windows.** It built its
+  default directory with `new URL(...).pathname`, which yields `/C:/…` and was
+  then resolved against the drive root as `C:\C:\…`. It silently found no
+  checks, taking the three tests that compare emitted levels against the score
+  down with it. Now `fileURLToPath`.
+- `--serve` no longer prints "Nothing leaves this machine" when it is bound to
+  an address where that is not true. It says what is actually the case instead.
+- Four tests that only ever passed on POSIX: one opening `/dev/null` by name,
+  one asserting POSIX path separators for all three platforms, one hard-coding
+  the host's own platform as an `--os` override, and one asserting a
+  parent-death signal that Windows cannot deliver — that last one is now skipped
+  there, with its reason stated rather than left looking like a bug.
+
+### Changed
+- The flag contract in `test/options.test.mjs` reads `worker/index.mjs` instead
+  of `CrawlSettings.swift`. Same discipline, same failure it catches — a
+  parameter the page sends that no flag corresponds to is a setting that quietly
+  does nothing — but checked against the file the page actually talks to.
+
 ## [1.40.0] — 2026-09-07
 
 ### Added

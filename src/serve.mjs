@@ -51,13 +51,14 @@ export async function serve({ port = 4321, host = '127.0.0.1', maxPages, allowed
     ALLOW_HOSTS: '1',
     // This is Node, so `node:tls` works and the certificate checks are real.
     // Cloudflare leaves this unset and gets the `tls-not-checked` note instead.
-    // The macOS window talks to this server, and was being handed a hosted
-    // runtime's limitation along with a note claiming to be the hosted version.
+    // This was once switched off for both, so a window running on Node skipped
+    // a check it could perfectly well run and then told people the report "was
+    // produced by the hosted version", which it was not.
     CAN_READ_CERTIFICATES: '1',
   };
 
-  // Every finished run, kept — and kept in the folder the macOS window already
-  // uses, so a crawl started in one is in the other's list a second later.
+  // Every finished run, kept, so a seven-minute crawl survives closing the tab.
+  // `SEO_AUDIT_HOME` decides where; in a container that is the mounted volume.
   //
   // Handed over as an object rather than imported by the Worker, which must
   // stay web-standard: this is `node:fs`, and Cloudflare has no filesystem. A
