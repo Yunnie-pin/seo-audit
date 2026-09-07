@@ -1,14 +1,15 @@
 // Runs, kept on disk, for the local server.
 //
-// The macOS window has kept every finished run since 1.23.0 and `--serve` kept
-// none, so somebody on Linux or Windows got one report and lost it the moment
-// they audited something else. A seven-minute crawl should only ever happen
-// once, and that is not a macOS-only claim.
+// The macOS window kept every finished run from 1.23.0 and `--serve` kept none,
+// so somebody on Linux or Windows got one report and lost it the moment they
+// audited something else. A seven-minute crawl should only ever happen once,
+// and that was never a macOS-only claim — which is why this outlived the window
+// that prompted it.
 //
-// It writes **the same folder the app uses**, in the same shape, so a run
-// started in the window is in the browser's list a second later and the other
-// way round — nothing is synchronised, exported or copied, because there is one
-// folder and both front ends read it.
+// The per-platform paths below are what that sharing needed, and they stay:
+// they are where each system says an application's own documents belong, and
+// moving them now would orphan every run somebody already has. `SEO_AUDIT_HOME`
+// overrides all of it, which is how the container mounts a volume.
 //
 // This is Node, and `worker/index.mjs` must not be: it runs on Cloudflare too,
 // where there is no filesystem. So the server hands the worker an object with

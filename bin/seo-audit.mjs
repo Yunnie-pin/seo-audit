@@ -86,9 +86,9 @@ const HELP = `
                        fetches the ones that are live: a staging copy open to
                        the index, a subdomain whose CNAME points at a service
                        that is gone, a second host serving the same site.
-                       Off by default here and on by default in the window and
-                       the Raycast extension — those are watched, this is a
-                       build step, and it calls a third party either way
+                       Off by default here and on by default in the window —
+                       that one is watched by a person, this is a build step,
+                       and it calls a third party either way
     --no-open          with --serve, do not open a browser. It opens one when
                        a person ran the command and never when something else
                        did, so this is only for the person who wants neither
@@ -96,6 +96,14 @@ const HELP = `
                        machine (default 4321). No account, no bill, and none of
                        the limits a Worker has — the crawl is only bounded by
                        what this computer will do
+    --host <address>   the address --serve binds to (default 127.0.0.1).
+                       0.0.0.0 is for a container, where the loopback address
+                       answers nothing from outside it. Note what this does
+                       not do: --serve mints its own token and hands it to
+                       every request, so anyone who can reach the port can
+                       crawl anything from this machine. What keeps that safe
+                       is publishing the port to a loopback address, not this
+                       flag
     --browser <name>   crawl as a real browser or a search crawler:
                        ${BROWSER_NAMES.join(', ')}.
                        Googlebot is what Google is served; a browser is what a
@@ -195,6 +203,7 @@ function parseArgs(argv) {
       const next = argv[i + 1];
       opts.serve = next && /^\d+$/.test(next) ? Number(argv[++i]) : true;
     }
+    else if (arg === '--host') opts.host = argv[++i];
     else if (arg === '--search-console-login') opts.searchConsoleLogin = true;
     else if (arg === '--search-console') {
       // Optionally the property name, since a domain property is not a URL.
@@ -358,16 +367,34 @@ if (opts.reports !== undefined) {
 // The local UI, which is a different program from here on: no target, no
 // report file, and it runs until interrupted.
 // `!== undefined` rather than truthiness: --serve 0 asks the operating system
-// to pick a free port, which is what the macOS app does, and zero is falsy.
+// to pick a free port, which is what a parent process embedding this does, and zero is falsy.
 // That bug shipped as "the app opens and the engine never starts".
 if (opts.serve !== undefined) {
   const { serve } = await import('../src/serve.mjs');
   const { url } = await serve({
     port: opts.serve === true ? 4321 : opts.serve,
+    // Left out rather than passed as undefined would be the same thing here —
+    // a destructuring default fires on undefined — but saying it once is
+    // clearer than making the reader remember that. serve() defaults to
+    // 127.0.0.1 and that default is the security boundary, not a preference.
+    host: opts.host,
     maxPages: opts.limit,
     userAgent: opts.userAgent,
   });
-  console.log(`\n  seo-audit is serving at ${url}\n  Nothing leaves this machine. Ctrl-C to stop.\n`);
+  // "Nothing leaves this machine" was true while the only address this could
+  // bind was the loopback one. It is a claim, not decoration, so it is only
+  // printed where it still holds — and where it does not, the replacement says
+  // the thing somebody actually needs to know: this server hands its own token
+  // to every request, so reaching the port is the whole of the authentication.
+  const loopback = /^(127\.|::1$|localhost$)/.test(opts.host ?? '127.0.0.1');
+  console.log(
+    `\n  seo-audit is serving at ${url}\n  ` +
+    (loopback
+      ? 'Nothing leaves this machine.'
+      : `Reachable from the network, and NOT password-protected — anyone who can\n  ` +
+        `reach ${opts.host}:${opts.serve === true ? 4321 : opts.serve} can crawl any site from here.`) +
+    ' Ctrl-C to stop.\n',
+  );
 
   // Started by something rather than by somebody: when stdin is a *pipe*, its
   // closing is the parent going away, and a server that outlives the window
@@ -397,13 +424,14 @@ if (opts.serve !== undefined) {
   }
 
   // Opened for a person, never for a parent. The same distinction the pipe
-  // check above already makes: somebody who typed `--serve` wants the page,
-  // and the macOS window — which spawns this and draws its own report — would
-  // get a browser it never asked for on every launch.
+  // check above already makes: somebody who typed `--serve` wants the page, and
+  // anything that spawned this as a child wants the port, not a browser window
+  // on every launch.
   //
-  // This is the whole of "the desktop UI for Linux and Windows": a command that
-  // opens a window. Failing to open one is not a reason to refuse to serve, so
-  // the URL is printed either way and nothing here throws.
+  // This is the whole of "the desktop UI": a command that opens a window.
+  // Failing to open one is not a reason to refuse to serve, so the URL is
+  // printed either way and nothing here throws — which is also what makes the
+  // container work, where there is no browser to open and `--no-open` says so.
   if (!stdinIsPipe && !opts.noOpen) {
     const { openUrl } = await import('../src/open-url.mjs');
     if (!openUrl(url)) console.log('  Open that address yourself — this system has no launcher I know.\n');

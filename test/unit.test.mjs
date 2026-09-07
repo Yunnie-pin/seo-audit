@@ -1478,7 +1478,12 @@ test('a server reading /dev/null is not a server whose parent has gone', async (
   // the CI job that builds the macOS app failed on its first run.
   const { spawn } = await import('node:child_process');
   const { openSync } = await import('node:fs');
-  const devNull = openSync('/dev/null', 'r');
+  const { devNull: nowhere } = await import('node:os');
+  // `os.devNull`, not the literal path. The POSIX name fails on Windows, and
+  // the bare 'NUL' that replaces it there is resolved against the working
+  // directory — both land as ENOENT, which reads like the server being broken
+  // rather than the test naming a file that platform spells differently.
+  const devNull = openSync(nowhere, 'r');
   const child = spawn(process.execPath, ['bin/seo-audit.mjs', '--serve', '4393'], {
     stdio: [devNull, 'pipe', 'pipe'],
   });
@@ -1496,9 +1501,24 @@ test('a server reading /dev/null is not a server whose parent has gone', async (
   }
 });
 
-test('a server started by something, rather than by somebody, dies with it', async () => {
-  // The macOS shell spawns this and points a web view at it. The first time it
-  // was run for real the server outlived the window, held port 4321, and the
+// Skipped on Windows, and the reason is a fact about the platform rather than
+// about this test: `fstatSync(0)` on a piped stdin there reports neither a FIFO
+// nor a socket — nor a character device, nor a file — so the detection in
+// bin/seo-audit.mjs cannot fire and the server does not shut down with its
+// parent. It is POSIX behaviour being asserted, so it is asserted where it
+// holds, and named here rather than left looking like a bug nobody chased.
+//
+// This matters less than it did: the shells that spawned `--serve` as a child
+// are gone. It still matters for a container, where stdin is /dev/null — a
+// character device, not a pipe — which is exactly why the server stays up
+// there. Do not add `stdin_open` to the compose file.
+test('a server started by something, rather than by somebody, dies with it', {
+  skip: process.platform === 'win32'
+    ? 'a piped stdin on Windows reports as neither a FIFO nor a socket, so the guard cannot see it'
+    : false,
+}, async () => {
+  // The native shells spawned this and pointed a web view at it. The first time
+  // it was run for real the server outlived the window, held port 4321, and the
   // next launch failed. stdin being a pipe is how a child knows it has a
   // parent; the pipe closing is that parent going away.
   const { spawn } = await import('node:child_process');
@@ -1564,8 +1584,14 @@ test('a combination that does not exist is refused, not approximated', () => {
 });
 
 test('a crawler names no machine, so --os has nothing to say to it', () => {
-  const asked = userAgentFor('googlebot', 'windows');
-  assert.equal(asked.ua, userAgentFor('googlebot', 'macos').ua);
+  // `ignoredOs` means "an --os was asked for and overridden", which it decides
+  // by comparing with this machine's own platform. So the OS named here has to
+  // be one this machine is not, or the test passes or fails by where it runs —
+  // it used to hard-code 'windows', and failed on a Windows machine for a
+  // reason that had nothing to do with the code.
+  const notThisOne = thisPlatform() === 'macos' ? 'windows' : 'macos';
+  const asked = userAgentFor('googlebot', notThisOne);
+  assert.equal(asked.ua, userAgentFor('googlebot', 'linux').ua);
   assert.ok(asked.ignoredOs, 'and it says so rather than pretending the flag worked');
 });
 
@@ -4794,12 +4820,16 @@ test('opening is detached, ignored and never fatal', async () => {
 test('each platform keeps reports where that platform keeps documents', async () => {
   const { libraryRoot } = await import('../src/library.mjs');
   const env = { HOME: '/h' };
-  // Deliberately the same path Support.directory() uses on the Swift side —
-  // named for the bundle id — so the window and the browser share one library
-  // rather than each having their own.
-  assert.match(libraryRoot(env, 'darwin'), /Library\/Application Support\/seo-audit$/);
-  assert.match(libraryRoot({ ...env, APPDATA: 'C:\\Users\\a\\AppData\\Roaming' }, 'win32'), /seo-audit$/);
-  assert.match(libraryRoot({ ...env, XDG_DATA_HOME: '/h/.local/share' }, 'linux'), /\.local\/share\/seo-audit$/);
+  // `join()` uses the separator of the machine running the test, not of the
+  // platform being asked about, so these compare with the separators
+  // normalised. Without that the whole test only ever passed on POSIX, while
+  // asserting things about all three platforms.
+  const slashes = (p) => p.replace(/\\/g, '/');
+  // Deliberately the same path the native shells used — named for the bundle
+  // id — so a run started in one front end is in the other's list.
+  assert.match(slashes(libraryRoot(env, 'darwin')), /Library\/Application Support\/seo-audit$/);
+  assert.match(slashes(libraryRoot({ ...env, APPDATA: 'C:\\Users\\a\\AppData\\Roaming' }, 'win32')), /seo-audit$/);
+  assert.match(slashes(libraryRoot({ ...env, XDG_DATA_HOME: '/h/.local/share' }, 'linux')), /\.local\/share\/seo-audit$/);
   assert.equal(libraryRoot({ SEO_AUDIT_HOME: '/somewhere' }, 'linux'), '/somewhere');
 });
 

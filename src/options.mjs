@@ -1,6 +1,6 @@
 // Every flag, and whether the window can reach it.
 //
-// The command line grew thirty-two flags and the macOS window reached ten of
+// The command line grew thirty-two flags and the window reached ten of
 // them, and nothing anywhere said whether that was a decision or an oversight.
 // It was both, in different places, and there was no way to tell which from
 // outside — the same failure this project refuses in its reports, where a
@@ -28,7 +28,7 @@ export const OPTIONS = [
              help: 'A big site is minutes. Preview first if you are not sure this is the right one.' } },
   { flag: '--concurrency', query: 'concurrency', app: true,
     field: { type: 'select', label: 'Speed',
-             // The same three the macOS window offers, so "Gentle" means the
+             // The same three the window offers, so "Gentle" means the
              // same thing in both. The numbers live in one place.
              choices: [['', 'Normal — 6 at a time'], ['1', 'Gentle — one at a time, for a server that rate limits'],
                        ['12', 'Fast — 12 at a time, if you own the server']] } },
@@ -80,7 +80,7 @@ export const OPTIONS = [
   { flag: '--md', query: null, app: true, via: 'the Export menu' },
   { flag: '--html', query: null, app: true, via: 'the Export menu' },
 
-  { flag: '--no-open', query: null, app: 'the window is the browser this would open — it spawns --serve itself and draws the report natively, and the pipe it hands over is what already stops a browser appearing' },
+  { flag: '--no-open', query: null, app: 'the window is the browser this would open — by the time the page is on screen the question has answered itself, and it is the container that needs the flag, where there is no browser to open at all' },
 
   // --- deliberately not in a window ---------------------------------------
   { flag: '--help', query: null, app: 'a window has no command line to explain' },
@@ -88,6 +88,7 @@ export const OPTIONS = [
   { flag: '--quiet', query: null, app: 'the crawl log is on screen while it runs' },
   { flag: '--verbose', query: null, app: 'the crawl log is on screen while it runs' },
   { flag: '--serve', query: null, app: 'the window is what --serve serves' },
+  { flag: '--host', query: null, app: 'a page cannot move the socket it is being served over, and it is the one thing here that must not be reachable from the page — the bind address is what stands between this and an open crawler' },
   { flag: '--reports', query: null, app: 'the sidebar is this list, and it is always on' },
   { flag: '--fail-on', query: null, app: 'a window has no exit code for a build to read' },
   { flag: '--update-baseline', query: null, app: 'a baseline is a file a repository commits' },

@@ -3,15 +3,28 @@ on:
   push:
     branches: [main]
   pull_request:
+  # So release.yml can run exactly this before it publishes anything. A tag is
+  # not by itself evidence that the code is healthy.
+  workflow_call:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         # 18 is the floor the README promises; 22 is what most runners have.
+        os: [ubuntu-latest]
         node: [18, 20, 22]
+        # One Windows job, and it earns its minutes. Running only ubuntu hid
+        # five real Windows failures for months — a `new URL().pathname` that
+        # resolved to `C:\C:\…` and silently scanned no files, a test that
+        # opened '/dev/null' by name, one that asserted POSIX path separators,
+        # and one that hard-coded the host's own platform as its override.
+        # Every one of them was found by running the suite on Windows once.
+        include:
+          - os: windows-latest
+            node: 22
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

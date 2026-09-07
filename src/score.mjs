@@ -39,7 +39,7 @@
 // both — which the report says out loud.
 //
 // The score is computed in the engine and shipped in the report, so the
-// terminal, the Markdown, the HTML, the macOS window and the Raycast extension
+// terminal, the Markdown, the HTML and the served page
 // all show the same number rather than four arithmetics that drift.
 
 import { categoryOf, CATEGORIES } from './areas.mjs';

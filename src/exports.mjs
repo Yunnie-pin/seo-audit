@@ -9,7 +9,7 @@
 //
 // What it does own is the **list**: which formats exist, what they are called,
 // and what a saved file is named. That was written out twice — once in the
-// macOS app's `ExportFormat` and once in the Raycast extension — and a third
+// macOS app's `ExportFormat` and once in the Raycast extension, both now gone — and a third
 // copy for the served window would have been the point at which they started
 // disagreeing about whether "Structured data" is called that.
 //

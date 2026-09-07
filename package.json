@@ -28,11 +28,9 @@
     "node": ">=18"
   },
   "scripts": {
-    "pretest": "node scripts/link-engine.mjs",
     "test": "node --test test/*.test.mjs",
-    "pretest:all": "node scripts/link-engine.mjs",
-    "test:all": "node scripts/test-all.mjs",
-    "audit": "node bin/seo-audit.mjs"
+    "audit": "node bin/seo-audit.mjs",
+    "serve": "node bin/seo-audit.mjs --serve"
   },
   "keywords": [
     "seo",

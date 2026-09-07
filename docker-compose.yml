@@ -1,0 +1,45 @@
+# Menjalankan web UI-nya:
+#
+#   docker compose up --build      lalu buka http://localhost:4321
+#
+# Hanya satu layanan. Yang disajikan `--serve` adalah worker/index.mjs yang
+# sama persis dengan yang berjalan di Cloudflare, lewat adapter node:http
+# setebal tiga puluh baris — jadi tidak ada klien terpisah untuk dibangun, dan
+# laporan dari sini tidak bisa berbeda dari laporan CLI.
+
+services:
+  web:
+    build:
+      context: .
+    image: ghcr.io/nurkamol/seo-audit:local
+    # Terikat ke loopback host, dan ini bukan kehati-hatian berlebihan.
+    #
+    # `serve()` membuat AUDIT_TOKEN acak setiap start lalu menyuntikkannya ke
+    # setiap request yang masuk, jadi authorized() selalu lolos. ALLOW_PSI,
+    # ALLOW_SEARCH_CONSOLE dan ALLOW_HOSTS dinyalakan *karena* servernya
+    # dianggap terikat loopback — orang yang menjalankannya adalah orang yang
+    # dilayaninya. Siapa pun yang bisa menjangkau port ini mendapat crawler
+    # tanpa kata sandi, lengkap dengan kuota PageSpeed dan kredensial Search
+    # Console milik pemiliknya.
+    #
+    # Mengubah ini jadi '0.0.0.0:4321:4321' butuh perubahan pada src/serve.mjs
+    # lebih dulu — token dari env, ALLOW_* jadi opt-in — bukan hanya di baris
+    # ini.
+    ports:
+      - '127.0.0.1:${PORT:-4321}:4321'
+    environment:
+      # Run yang selesai disimpan di sini. libraryRoot() membaca ini sebelum
+      # apa pun yang lain.
+      SEO_AUDIT_HOME: /data
+    volumes:
+      - reports:/data
+    restart: unless-stopped
+    # Sengaja tidak ada `stdin_open`. bin/seo-audit.mjs mematikan server ketika
+    # stdin-nya berupa pipe, karena begitulah dulu shell native memberi tahu
+    # bahwa induknya sudah pergi. Default compose adalah /dev/null — sebuah
+    # character device, bukan pipe — jadi server tetap hidup. Menambahkan
+    # stdin_open: true membuat container keluar seketika saat start, dan
+    # gejalanya terbaca seperti crash.
+
+volumes:
+  reports:

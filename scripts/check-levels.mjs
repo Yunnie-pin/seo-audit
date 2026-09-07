@@ -11,11 +11,17 @@
 // a fixture nobody would maintain.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const LEVEL = /'(error|warn|info)'/;
 
-/** id → Set of levels, over every .mjs under a directory. */
-export function emittedLevels(dir = new URL('../src/', import.meta.url).pathname) {
+/** id → Set of levels, over every .mjs under a directory.
+ *
+ *  `fileURLToPath`, not `.pathname`. On Windows the latter yields `/C:/…`,
+ *  which `readdirSync` then resolves against the drive root as `C:\C:\…` — so
+ *  it scanned nothing, found no checks, and took the three tests that compare
+ *  levels against the score with it. CI only ran ubuntu, so nothing caught it. */
+export function emittedLevels(dir = fileURLToPath(new URL('../src/', import.meta.url))) {
   const found = new Map();
   const add = (id, level) => found.set(id, (found.get(id) ?? new Set()).add(level));
 

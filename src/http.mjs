@@ -179,9 +179,11 @@ export class Fetcher {
     // sweeps all judge on those alone. Keeping every body as well made the
     // cache the largest live object in the process: 403 requests on one 25-page
     // site held 65MB, of which 18MB was still reachable once the run let go.
-    // That is under Node's default heap and over Raycast's, whose commands get
-    // 100MB and were dying on sites this tool audits comfortably from a
-    // terminal.
+    // That is under Node's default heap and over the 100MB the Raycast
+    // extension's commands got, which is where it was found — they died on
+    // sites this tool audits comfortably from a terminal. That front end is
+    // gone; the reason to keep this is not. A container with a memory limit is
+    // the same constraint wearing different clothes.
     //
     // So a sweep asks for `keepBody: false` and the body is dropped on the way
     // into the cache, never on the way out — whoever fetched it reads it in
